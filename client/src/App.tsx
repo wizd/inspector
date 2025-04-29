@@ -29,17 +29,20 @@ import { useDraggablePane } from "./lib/hooks/useDraggablePane";
 import { StdErrNotification } from "./lib/notificationTypes";
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import {
   Bell,
   Files,
   FolderTree,
   Hammer,
   Hash,
+  Key,
   MessageSquare,
 } from "lucide-react";
 
 import { z } from "zod";
 import "./App.css";
+import AuthDebugger from "./components/AuthDebugger";
 import ConsoleTab from "./components/ConsoleTab";
 import HistoryAndNotifications from "./components/History";
 import PingTab from "./components/PingTab";
@@ -136,6 +139,7 @@ const App = () => {
       }
     >
   >([]);
+  const [showAuthDebugger, setShowAuthDebugger] = useState(false);
   const nextRequestId = useRef(0);
   const rootsRef = useRef<Root[]>([]);
 
@@ -237,6 +241,14 @@ const App = () => {
     },
     [connectMcpServer],
   );
+
+  // Auto-connect to previously saved serverURL after OAuth callback
+  const onOAuthDebugConnect = useCallback(() => {
+    // setSseUrl(serverUrl);
+    // setTransportType("sse");
+    // void connectMcpServer();
+    setShowAuthDebugger(true);
+  }, []);
 
   useEffect(() => {
     fetch(`${getMCPProxyAddress(config)}/config`)
@@ -482,6 +494,17 @@ const App = () => {
     );
   }
 
+  if (window.location.pathname === "/oauth/callback/debug") {
+    const OAuthCallback = React.lazy(
+      () => import("./components/OAuthDebugCallback"),
+    );
+    return (
+      <Suspense fallback={<div>Loading...</div>}>
+        <OAuthCallback onConnect={onOAuthDebugConnect} />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar
@@ -568,6 +591,10 @@ const App = () => {
                 <TabsTrigger value="roots">
                   <FolderTree className="w-4 h-4 mr-2" />
                   Roots
+                </TabsTrigger>
+                <TabsTrigger value="auth">
+                  <Key className="w-4 h-4 mr-2" />
+                  Auth
                 </TabsTrigger>
               </TabsList>
 
@@ -700,15 +727,44 @@ const App = () => {
                       setRoots={setRoots}
                       onRootsChange={handleRootsChange}
                     />
+                    <AuthDebugger
+                      sseUrl={sseUrl}
+                      bearerToken={bearerToken}
+                      headerName={headerName}
+                      setBearerToken={setBearerToken}
+                      setHeaderName={setHeaderName}
+                      onBack={() => setShowAuthDebugger(false)}
+                    />
                   </>
                 )}
               </div>
             </Tabs>
+          ) : showAuthDebugger ? (
+            <AuthDebugger
+              sseUrl={sseUrl}
+              bearerToken={bearerToken}
+              headerName={headerName}
+              setBearerToken={setBearerToken}
+              setHeaderName={setHeaderName}
+              onBack={() => setShowAuthDebugger(false)}
+            />
           ) : (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex flex-col items-center justify-center h-full gap-4">
               <p className="text-lg text-gray-500">
                 Connect to an MCP server to start inspecting
               </p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-muted-foreground">
+                  Need to configure authentication?
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAuthDebugger(true)}
+                >
+                  Open Auth Settings
+                </Button>
+              </div>
             </div>
           )}
         </div>
