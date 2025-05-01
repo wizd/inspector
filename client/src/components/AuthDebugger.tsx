@@ -22,10 +22,6 @@ import { CheckCircle2, Circle, ExternalLink } from "lucide-react";
 
 interface AuthDebuggerProps {
   sseUrl: string;
-  bearerToken: string;
-  headerName: string;
-  setBearerToken: (token: string) => void;
-  setHeaderName: (headerName: string) => void;
   onBack: () => void;
 }
 
@@ -46,20 +42,43 @@ class DebugInspectorOAuthClientProvider extends InspectorOAuthClientProvider {
   }
 }
 
-const AuthDebugger = ({
-  sseUrl,
-  bearerToken,
-  headerName,
-  setBearerToken,
-  setHeaderName,
-  onBack,
-}: AuthDebuggerProps) => {
+const validateOAuthMetadata = (
+  metadata: OAuthMetadata | null,
+  toast: (arg0: object) => void,
+): OAuthMetadata => {
+  if (!metadata) {
+    toast({
+      title: "Error",
+      description: "Can't advance without successfully fetching metadata",
+      variant: "destructive",
+    });
+    throw new Error("OAuth metadata not found");
+  }
+  return metadata;
+};
+
+const validateClientInformation = async (
+  provider: DebugInspectorOAuthClientProvider,
+  toast: (arg0: object) => void,
+): Promise<OAuthClientInformation> => {
+  const clientInformation = await provider.clientInformation();
+
+  if (!clientInformation) {
+    toast({
+      title: "Error",
+      description: "Can't advance without successful client registration",
+      variant: "destructive",
+    });
+    throw new Error("OAuth client information not found");
+  }
+  return clientInformation;
+};
+
+const AuthDebugger = ({ sseUrl, onBack }: AuthDebuggerProps) => {
   const { toast } = useToast();
   const [isInitiatingAuth, setIsInitiatingAuth] = useState(false);
   const [oauthTokens, setOAuthTokens] = useState<OAuthTokens | null>(null);
   const [loading, setLoading] = useState(true);
-  const [localHeaderName, setLocalHeaderName] = useState(headerName);
-  const [localBearerToken, setLocalBearerToken] = useState(bearerToken);
   const [oauthStep, setOAuthStep] = useState<OAuthStep>("not_started");
   const [oauthMetadata, setOAuthMetadata] = useState<OAuthMetadata | null>(
     null,
@@ -82,7 +101,7 @@ const AuthDebugger = ({
             const parsedTokens = await OAuthTokensSchema.parseAsync(
               JSON.parse(tokens),
             );
-            setOauthTokens(parsedTokens);
+            setOAuthTokens(parsedTokens);
             setOAuthStep("complete");
           }
         }
@@ -154,24 +173,30 @@ const AuthDebugger = ({
         const parsedMetadata = await OAuthMetadataSchema.parseAsync(metadata);
         setOAuthMetadata(parsedMetadata);
       } else if (oauthStep === "metadata_discovery") {
+        const metadata = validateOAuthMetadata(oauthMetadata, toast);
+
         setOAuthStep("client_registration");
 
         const fullInformation = await registerClient(sseUrl, {
-          metadata: oauthMetadata,
+          metadata,
           clientMetadata: provider.clientMetadata,
         });
 
         provider.saveClientInformation(fullInformation);
       } else if (oauthStep === "client_registration") {
+        const metadata = validateOAuthMetadata(oauthMetadata, toast);
+        const clientInformation = await validateClientInformation(
+          provider,
+          toast,
+        );
         setOAuthStep("authorization_redirect");
         // This custom implementation captures the OAuth flow step by step
         // First, get or register the client
         try {
-          const clientInformation = await provider.clientInformation();
           const { authorizationUrl, codeVerifier } = await startAuthorization(
             sseUrl,
             {
-              metadata: oauthMetadata,
+              metadata,
               clientInformation,
               redirectUrl: provider.redirectUrl,
             },
@@ -194,15 +219,27 @@ const AuthDebugger = ({
           });
         }
       } else if (oauthStep === "authorization_code") {
-        // This is after we enter the code.
+        if (!authorizationCode || authorizationCode.trim() === "") {
+          toast({
+            title: "Error",
+            description: "You need to provide an authorization code",
+            variant: "destructive",
+          });
+          return;
+        }
+        // We have a code, continue to token request
         setOAuthStep("token_request");
       } else if (oauthStep === "token_request") {
         const codeVerifier = provider.codeVerifier();
-        const clientInformation = await provider.clientInformation();
+        const metadata = validateOAuthMetadata(oauthMetadata, toast);
+        const clientInformation = await validateClientInformation(
+          provider,
+          toast,
+        );
 
         // const clientInformation = await provider.clientInformation();
         const tokens = await exchangeAuthorization(sseUrl, {
-          metadata: oauthMetadata,
+          metadata,
           clientInformation,
           authorizationCode,
           codeVerifier,
@@ -279,34 +316,7 @@ const AuthDebugger = ({
     }
   };
 
-  const handleSaveManualAuth = () => {
-    setBearerToken(localBearerToken);
-    setHeaderName(localHeaderName);
-    toast({
-      title: "Settings Saved",
-      description:
-        "Your authentication settings have been saved for the next connection",
-    });
-  };
-
-  const getOAuthStatus = () => {
-    if (!oauthTokens) return "Not authenticated";
-
-    if (oauthTokens.expires_at) {
-      const now = Math.floor(Date.now() / 1000);
-      if (now > oauthTokens.expires_at) {
-        return "Token expired";
-      }
-
-      const timeRemaining = oauthTokens.expires_at - now;
-      return `Authenticated (expires in ${Math.floor(timeRemaining / 60)} minutes)`;
-    }
-
-    return "Authenticated";
-  };
   const renderOAuthFlow = () => {
-    const provider = new DebugInspectorOAuthClientProvider(sseUrl);
-
     const steps = [
       {
         key: "not_started",
@@ -534,17 +544,6 @@ const AuthDebugger = ({
                 <p>Loading authentication status...</p>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">Status:</span>
-                    <span
-                      className={
-                        oauthTokens ? "text-green-600" : "text-amber-600"
-                      }
-                    >
-                      {getOAuthStatus()}
-                    </span>
-                  </div>
-
                   {oauthTokens && (
                     <div className="space-y-2">
                       <p className="text-sm font-medium">Access Token:</p>

@@ -729,10 +729,6 @@ const App = () => {
                     />
                     <AuthDebugger
                       sseUrl={sseUrl}
-                      bearerToken={bearerToken}
-                      headerName={headerName}
-                      setBearerToken={setBearerToken}
-                      setHeaderName={setHeaderName}
                       onBack={() => setShowAuthDebugger(false)}
                     />
                   </>
@@ -742,10 +738,6 @@ const App = () => {
           ) : showAuthDebugger ? (
             <AuthDebugger
               sseUrl={sseUrl}
-              bearerToken={bearerToken}
-              headerName={headerName}
-              setBearerToken={setBearerToken}
-              setHeaderName={setHeaderName}
               onBack={() => setShowAuthDebugger(false)}
             />
           ) : (
