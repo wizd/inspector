@@ -1,7 +1,5 @@
 import { useEffect, useRef } from "react";
-import { InspectorOAuthClientProvider } from "../lib/auth";
 import { SESSION_KEYS } from "../lib/constants";
-import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import { useToast } from "@/hooks/use-toast.ts";
 import {
   generateOAuthErrorDescription,
@@ -39,37 +37,19 @@ const OAuthDebugCallback = ({ onConnect }: OAuthCallbackProps) => {
       }
 
       const serverUrl = sessionStorage.getItem(SESSION_KEYS.SERVER_URL);
-      if (!serverUrl) {
-        return notifyError("Missing Server URL [DEBUG]");
-      }
 
-      onConnect(serverUrl);
+      // ServerURL isn't set, this can happen if we've opened the
+      // authentication request in a new tab, so we don't have the same
+      // session storage
+      if (!serverUrl) {
+        return;
+      }
 
       if (!params.code) {
         return notifyError("Missing authorization code");
       }
 
       sessionStorage.setItem(SESSION_KEYS.DEBUG_CODE, params.code);
-
-      // let result;
-      // try {
-      //   // Create an auth provider with the current server URL
-      //   const serverAuthProvider = new InspectorOAuthClientProvider(serverUrl);
-
-      //   result = await auth(serverAuthProvider, {
-      //     serverUrl,
-      //     authorizationCode: params.code,
-      //   });
-      // } catch (error) {
-      //   console.error("OAuth callback error:", error);
-      //   return notifyError(`Unexpected error occurred: ${error}`);
-      // }
-
-      // if (result !== "AUTHORIZED") {
-      //   return notifyError(
-      //     `Expected to be authorized after providing auth code, got: ${result}`,
-      //   );
-      // }
 
       // Finally, trigger auto-connect
       toast({
@@ -81,12 +61,15 @@ const OAuthDebugCallback = ({ onConnect }: OAuthCallbackProps) => {
     };
 
     handleCallback().finally(() => {
-      // Only redirect if we have the URL set, otherwise assume it was in a new tab.
+      // Only redirect if we have the URL set, otherwise assume this was
+      // in a new tab
       if (sessionStorage.getItem(SESSION_KEYS.SERVER_URL)) {
         window.history.replaceState({}, document.title, "/");
       }
     });
   }, [toast, onConnect]);
+
+  const callbackParams = parseOAuthCallbackParams(window.location.search);
 
   return (
     <div className="flex items-center justify-center h-screen">
@@ -95,8 +78,13 @@ const OAuthDebugCallback = ({ onConnect }: OAuthCallbackProps) => {
           Please copy this authorization code and return to the Auth Debugger:
         </p>
         <code className="block p-2 bg-muted rounded-sm overflow-x-auto text-xs">
-          {parseOAuthCallbackParams(window.location.search).code ||
-            "No code found"}
+          {callbackParams.successful
+            ? (
+                callbackParams as {
+                  code: string;
+                }
+              ).code
+            : `No code found: ${callbackParams.error}, ${callbackParams.error_description}`}
         </code>
         <p className="mt-4 text-xs text-muted-foreground">
           Close this tab and paste the code in the OAuth flow to complete
